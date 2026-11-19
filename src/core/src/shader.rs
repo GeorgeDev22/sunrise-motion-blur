@@ -1,3 +1,7 @@
+//! The blur shader, in WGSL. A mod package carries only Rust and TOML under `src/`, so it lives
+//! in a string; `tests/shader.rs` compiles it with the game's shader compiler.
+
+pub const SHADER: &str = r#"
 // Per-pixel motion blur, after McGuire et al., "A Reconstruction Filter for Plausible Motion
 // Blur" (2012), with Jimenez's alternating sample directions (2014).
 //
@@ -241,3 +245,4 @@ fn cylinder(gap: f32, radius: f32) -> f32 {
     }
     return vec4(sum / total, centre.a);
 }
+"#;

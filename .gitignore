@@ -1,4 +1,4 @@
 /target
 /.sunrise
-/core/target
-/core/Cargo.lock
+/src/core/target
+/src/core/Cargo.lock

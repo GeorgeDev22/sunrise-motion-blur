@@ -10,4 +10,4 @@ publish = false
 sunrise-mod-api = { path = ".sunrise/sdk/api/crates/sunrise-mod-api" }
 # The game internals `sunrise-mod.toml` declares under [[internals]].
 sunrise-internals = { path = ".sunrise/sdk/api/crates/sunrise-internals" }
-motion-blur-core = { path = "core" }
+motion-blur-core = { path = "src/core" }

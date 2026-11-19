@@ -1,4 +1,4 @@
-//! The blur's render pipelines, one per entry point of `shaders/blur.wgsl`.
+//! The blur's render pipelines, one per entry point of the shader (`motion_blur_core::SHADER`).
 
 use internals::sunrise_mod_render::render::wgpu;
 use motion_blur_core::MotionVertex;
@@ -27,7 +27,7 @@ impl Pipelines {
     pub fn new(device: &wgpu::Device) -> Self {
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Motion blur"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../shaders/blur.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(motion_blur_core::SHADER.into()),
         });
         let hand_depth = wgpu::DepthStencilState {
             format: HAND_DEPTH_FORMAT,

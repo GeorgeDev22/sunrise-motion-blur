@@ -15,7 +15,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev
 
       - name: Test the core
-        run: cargo test --manifest-path core/Cargo.toml
+        run: cargo test --manifest-path src/core/Cargo.toml
 
       - name: Install cargo-sunrise-mod
         run: |

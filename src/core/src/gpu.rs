@@ -1,4 +1,4 @@
-//! The data the shaders read, laid out as `src/shaders/blur.wgsl` declares it
+//! The data the shader reads, laid out as its `Params` and vertex inputs declare it
 //! (`tests/shader.rs` holds them to it).
 
 use bytemuck::{Pod, Zeroable};

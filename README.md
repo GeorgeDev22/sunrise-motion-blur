@@ -38,11 +38,10 @@ Jimenez's refinements (2014):
    moving thing smears over what is behind it and never over what is in front.
 
 ```
-core/            timing, camera and mob history, GPU data layout: plain Rust, tested
 src/lib.rs       the mod's hooks: settings
 src/render/      the passes, their pipelines and textures
-src/shaders/     blur.wgsl
 src/mixins/      the three render functions the game hands to the mod
+src/core/        timing, camera and mob history, the shader and its data layout: plain Rust, tested
 ```
 
 The game calls the mod through Sunrise's render functions (`world_drawn`, `hand_drawn`, `render_needs`),
@@ -53,8 +52,8 @@ which a native mod takes over with a `[[native.mixin]]` row each.
 You need [`cargo sunrise-mod`](https://sunrise-org.github.io/sunrise/start/install-tool.html).
 
 ```sh
-cargo test --manifest-path core/Cargo.toml   # the logic and the shader
-cargo sunrise-mod build                      # target/sunrise-mod/motion_blur.smod
+cargo test --manifest-path src/core/Cargo.toml   # the logic and the shader
+cargo sunrise-mod build                          # target/sunrise-mod/motion_blur.smod
 cargo sunrise-mod run --resources <prepared resources> -- --world Test --creative
 ```
 

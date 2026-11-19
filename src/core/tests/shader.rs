@@ -1,6 +1,6 @@
 //! The blur shader compiles, and its `Params` is laid out as `BlurParams` is.
 
-const SOURCE: &str = include_str!("../../src/shaders/blur.wgsl");
+use motion_blur_core::SHADER as SOURCE;
 
 fn module() -> naga::Module {
     naga::front::wgsl::parse_str(SOURCE).unwrap_or_else(|e| panic!("{}", e.emit_to_string(SOURCE)))

@@ -3,7 +3,8 @@
 //!
 //! The game calls into `render` through three render functions it lets native mods take over
 //! (the `[[native.mixin]]` rows in `sunrise-mod.toml`, whose helpers are in `src/mixins/`).
-//! What doesn't need the game lives in `motion-blur-core`, where it is tested.
+//! What doesn't need the game, the shader included, lives in `motion-blur-core` (`src/core/`),
+//! where it is tested.
 
 mod render;
 mod settings;
