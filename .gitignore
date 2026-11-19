@@ -1,0 +1,4 @@
+/target
+/.sunrise
+/core/target
+/core/Cargo.lock

@@ -1,0 +1,22 @@
+{
+  "motion_blur.setting.enabled": "Motion Blur",
+  "motion_blur.setting.enabled.tooltip": "Blur what moves on screen. Turned off, the mod does nothing at all.",
+  "motion_blur.setting.strength": "Strength",
+  "motion_blur.setting.strength.tooltip": "How long the streaks are. 100% is a film camera's half-frame shutter at 60 FPS.",
+  "motion_blur.setting.mode": "Frame Rate",
+  "motion_blur.setting.mode.tooltip": "Consistent: the same blur at any FPS. Cinematic: like a film camera at your FPS, longer when it is low.",
+  "motion_blur.setting.mode.consistent": "Consistent",
+  "motion_blur.setting.mode.cinematic": "Cinematic",
+  "motion_blur.setting.quality": "Quality",
+  "motion_blur.setting.quality.tooltip": "Samples per blurred pixel. Higher is smoother on long streaks and costs a little more.",
+  "motion_blur.setting.quality.low": "Low",
+  "motion_blur.setting.quality.medium": "Medium",
+  "motion_blur.setting.quality.high": "High",
+  "motion_blur.setting.quality.ultra": "Ultra",
+  "motion_blur.setting.max_length": "Longest Streak",
+  "motion_blur.setting.max_length.tooltip": "The longest a streak can get, in percent of the screen's height.",
+  "motion_blur.setting.moving_objects": "Moving Mobs",
+  "motion_blur.setting.moving_objects.tooltip": "Blur mobs, players and dropped items by their own motion, not only the camera's.",
+  "motion_blur.setting.hand": "Hand",
+  "motion_blur.setting.hand.tooltip": "Blur the first-person hand and held item as they swing and bob."
+}
