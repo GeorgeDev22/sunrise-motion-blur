@@ -5,7 +5,8 @@ fn hand_drawn(hand: &mut HandDrawn<'_>) {
     // can use the game's own wgpu. What to draw is decided in the mod's crate (`src/frame.rs`)
     // and handed over as a `Work`; this draws it:
     //
-    // 1. motion: the camera's from the depth, mobs that moved over it, then the hand;
+    // 1. motion: the camera's from the depth, mobs that moved over it, then the hand standing
+    //    still, which keeps it sharp;
     // 2. the longest motion in each tile;
     // 3. the blur itself, from a copy of the frame back into the frame.
 
@@ -41,13 +42,6 @@ fn hand_drawn(hand: &mut HandDrawn<'_>) {
     const TILE: wgpu::TextureFormat = wgpu::TextureFormat::Rg16Float;
     /// The hand's own depth, so its nearer faces win.
     const HAND_DEPTH: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
-    /// What the motion holds where nothing moves: no radius, as far as the sky.
-    const STILL: wgpu::Color = wgpu::Color {
-        r: 0.0,
-        g: 0.0,
-        b: 1e6,
-        a: 0.0,
-    };
 
     struct Gpu {
         device: wgpu::Device,
@@ -133,41 +127,38 @@ fn hand_drawn(hand: &mut HandDrawn<'_>) {
                 .write_buffer(&self.params, 0, work.params.bytes());
 
             // 1. Motion.
-            if work.world_moved {
-                let Some(depth) = work.depth.downcast_ref::<wgpu::TextureView>() else {
-                    return;
-                };
-                let depth = wgpu::BindingResource::TextureView(depth);
+            let Some(depth) = work.depth.downcast_ref::<wgpu::TextureView>() else {
+                return;
+            };
+            let depth = wgpu::BindingResource::TextureView(depth);
+            let group = bind(
+                &self.device,
+                &self.camera,
+                &[(0, self.params.as_entire_binding()), (1, depth.clone())],
+            );
+            let mut pass = begin(encoder, "Motion blur camera", &targets.motion, None, None);
+            pass.set_pipeline(&self.camera);
+            pass.set_bind_group(0, &group, &[]);
+            pass.draw(0..3, 0..1);
+            drop(pass);
+
+            let indices = work.quad_indices.downcast_ref::<wgpu::Buffer>();
+            if let Some(indices) = indices.filter(|_| work.objects.len() >= 4) {
+                let vertices = upload(
+                    &self.device,
+                    hand.queue,
+                    &mut self.object_vertices,
+                    &work.objects,
+                );
                 let group = bind(
                     &self.device,
-                    &self.camera,
-                    &[(0, self.params.as_entire_binding()), (1, depth.clone())],
+                    &self.objects,
+                    &[(0, self.params.as_entire_binding()), (1, depth)],
                 );
-                let mut pass = begin(encoder, "Motion blur camera", &targets.motion, None, None);
-                pass.set_pipeline(&self.camera);
+                let mut pass = begin(encoder, "Motion blur objects", &targets.motion, None, None);
+                pass.set_pipeline(&self.objects);
                 pass.set_bind_group(0, &group, &[]);
-                pass.draw(0..3, 0..1);
-                drop(pass);
-
-                let indices = work.quad_indices.downcast_ref::<wgpu::Buffer>();
-                if let Some(indices) = indices.filter(|_| work.objects.len() >= 4) {
-                    let vertices = upload(
-                        &self.device,
-                        hand.queue,
-                        &mut self.object_vertices,
-                        &work.objects,
-                    );
-                    let group = bind(
-                        &self.device,
-                        &self.objects,
-                        &[(0, self.params.as_entire_binding()), (1, depth)],
-                    );
-                    let mut pass =
-                        begin(encoder, "Motion blur objects", &targets.motion, None, None);
-                    pass.set_pipeline(&self.objects);
-                    pass.set_bind_group(0, &group, &[]);
-                    draw_quads(&mut pass, &vertices, indices, work.objects.len());
-                }
+                draw_quads(&mut pass, &vertices, indices, work.objects.len());
             }
             if let Some(atlas) = hand.atlas.filter(|_| work.hand.len() >= 4) {
                 hand.queue
@@ -188,14 +179,11 @@ fn hand_drawn(hand: &mut HandDrawn<'_>) {
                         (3, wgpu::BindingResource::Sampler(&self.atlas_sampler)),
                     ],
                 );
-                // Nothing in the world moved: the camera pass didn't run, so the hand goes over
-                // a motion that is still everywhere.
-                let clear = (!work.world_moved).then_some(STILL);
                 let mut pass = begin(
                     encoder,
                     "Motion blur hand",
                     &targets.motion,
-                    clear,
+                    None,
                     Some(&targets.hand_depth),
                 );
                 pass.set_pipeline(&self.hand);

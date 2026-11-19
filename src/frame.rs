@@ -1,16 +1,16 @@
 //! What each frame's blur needs, decided on the CPU.
 //!
 //! Once the world is drawn (`world_drawn`) the mod works out how the camera and each mob moved.
-//! Once the hand is drawn over it (`work`), the hand's motion joins in and the GPU half
-//! (`src/mixins/hand_drawn.rs`) is handed a [`Work`] to draw. The HUD comes after, so it stays
-//! sharp. When nothing on screen moves there is no `Work`, and the GPU does nothing.
+//! Once the hand is drawn over it (`work`), the GPU half (`src/mixins/hand_drawn.rs`) is handed a
+//! [`Work`] to draw. The hand and the HUD stay sharp. When nothing on screen moves there is no
+//! `Work`, and the GPU does nothing.
 //!
 //! The game's frame types can't be named here, only in the mixin helpers, so the helpers read
 //! the frame into a [`World`] and a [`Hand`] and keep its GPU objects as [`Kept`] values.
 
 use crate::settings;
 use motion_blur_core::{
-    BlurParams, CameraHistory, FrameClock, HandHistory, Mat4, MeshHistory, MotionVertex,
+    BlurParams, CameraHistory, FrameClock, Mat4, MeshHistory, MotionVertex, SAMPLES,
 };
 use std::any::Any;
 use std::sync::{LazyLock, Mutex, MutexGuard, PoisonError};
@@ -58,15 +58,13 @@ pub struct Hand<'a> {
 /// One frame's blur, for the GPU half to draw.
 pub struct Work {
     pub params: BlurParams,
-    /// The same frame seen with the hand's camera, for drawing the hand's motion.
+    /// The same frame seen with the hand's camera, for drawing where the hand is.
     pub hand_params: BlurParams,
     /// The vertices of mobs that moved by themselves (whole quads); empty when none did.
     pub objects: Vec<MotionVertex>,
-    /// The hand's vertices: with its motion when the hand is blurred, still when it isn't, so
-    /// that the blur keeps it sharp. Empty in third person.
+    /// The hand's vertices, standing still: drawn into the motion so the blur knows the hand is
+    /// in front and leaves it sharp. Empty in third person.
     pub hand: Vec<MotionVertex>,
-    /// Whether anything in the world moved: if not, only the hand did.
-    pub world_moved: bool,
     /// The world's depth view and its quad index buffer, kept from `world_drawn`.
     pub depth: Kept,
     pub quad_indices: Kept,
@@ -75,7 +73,6 @@ pub struct Work {
 /// What the world step leaves for the hand step of the same frame.
 struct Pending {
     params: BlurParams,
-    world_moved: bool,
     depth: Kept,
     quad_indices: Kept,
 }
@@ -85,7 +82,6 @@ struct Frames {
     clock: FrameClock,
     camera: CameraHistory,
     meshes: MeshHistory,
-    hand: HandHistory,
     objects: Vec<MotionVertex>,
     hand_vertices: Vec<MotionVertex>,
     pending: Option<Pending>,
@@ -96,7 +92,6 @@ impl Frames {
         self.clock.reset();
         self.camera.reset();
         self.meshes.reset();
-        self.hand.reset();
         self.pending = None;
     }
 }
@@ -108,14 +103,6 @@ fn frames() -> MutexGuard<'static, Frames> {
 /// Whether the blur is on; while it isn't, the GPU half lets go of what it made.
 pub fn active() -> bool {
     settings::current().active()
-}
-
-/// Whether the mod follows things that move on their own. The game hands mods only the
-/// entities it draws on the CPU, so asking for them keeps mobs off its GPU posing path where
-/// it can (with Sunrise's shader packs and frame generation).
-pub fn follows_objects() -> bool {
-    let settings = settings::current();
-    settings.active() && settings.moving_objects
 }
 
 pub fn world_drawn(world: World<'_>) {
@@ -132,19 +119,13 @@ pub fn world_drawn(world: World<'_>) {
     let view_proj = Mat4(world.view_proj);
     let reprojection = frames.camera.advance(view_proj, world.camera);
 
-    let objects_moved = if settings.moving_objects {
-        frames.meshes.update(
-            world.motion,
-            world.entities,
-            world.entity_position,
-            reprojection.map(|r| r.camera_motion),
-            &mut frames.objects,
-        )
-    } else {
-        frames.meshes.reset();
-        frames.objects.clear();
-        false
-    };
+    let objects_moved = frames.meshes.update(
+        world.motion,
+        world.entities,
+        world.entity_position,
+        reprojection.map(|r| r.camera_motion),
+        &mut frames.objects,
+    );
 
     let (Some(frame_seconds), Some(reprojection)) = (frame_seconds, reprojection) else {
         return;
@@ -152,8 +133,7 @@ pub fn world_drawn(world: World<'_>) {
     let Some(inverse) = view_proj.inverse() else {
         return;
     };
-    let world_moved = objects_moved || !reprojection.is_still(&view_proj);
-    if !world_moved && !settings.hand {
+    if !objects_moved && reprojection.is_still(&view_proj) {
         return;
     }
 
@@ -173,9 +153,8 @@ pub fn world_drawn(world: World<'_>) {
             exposure: settings.exposure(frame_seconds),
             max_radius: settings.max_radius(height).min(tile_size as f32),
             tile_size,
-            samples: settings.quality.samples(),
+            samples: SAMPLES,
         },
-        world_moved,
         depth,
         quad_indices,
     });
@@ -183,36 +162,23 @@ pub fn world_drawn(world: World<'_>) {
 
 /// The frame's blur, once the hand is drawn: `None` when nothing on screen moves.
 pub fn work(hand: Hand<'_>) -> Option<Work> {
-    let settings = settings::current();
     let mut frames = frames();
     let frames = &mut *frames;
     let pending = frames.pending.take()?;
 
-    // A hand that isn't blurred is still drawn into the motion, standing still, so the blur
-    // knows it is in front and leaves it sharp.
-    if !settings.hand {
-        frames.hand.reset();
-    }
-    let view_proj = Mat4(hand.view_proj);
-    let previous_view_proj = frames.hand.update(
-        hand.vertices,
-        hand.vertex,
-        view_proj,
-        &mut frames.hand_vertices,
-    );
-    let hand_moved = previous_view_proj != view_proj
-        || frames
-            .hand_vertices
-            .iter()
-            .any(|v| v.position != v.previous);
-    if !pending.world_moved && !hand_moved {
-        return None;
-    }
-
+    frames.hand_vertices.clear();
+    frames.hand_vertices.extend((0..hand.vertices).map(|i| {
+        let (position, uv) = (hand.vertex)(i);
+        MotionVertex {
+            position,
+            previous: position,
+            uv,
+        }
+    }));
     let hand_params = BlurParams {
-        view_proj: view_proj.0,
-        jittered: view_proj.0,
-        previous_view_proj: previous_view_proj.0,
+        view_proj: hand.view_proj,
+        jittered: hand.view_proj,
+        previous_view_proj: hand.view_proj,
         ..pending.params
     };
     Some(Work {
@@ -220,7 +186,6 @@ pub fn work(hand: Hand<'_>) -> Option<Work> {
         hand_params,
         objects: std::mem::take(&mut frames.objects),
         hand: std::mem::take(&mut frames.hand_vertices),
-        world_moved: pending.world_moved,
         depth: pending.depth,
         quad_indices: pending.quad_indices,
     })

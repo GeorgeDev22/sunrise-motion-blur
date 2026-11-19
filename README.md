@@ -3,16 +3,12 @@
 A native [Sunrise](https://github.com/sunrise-org/sunrise) mod that adds smooth, per-pixel motion blur.
 
 - **The camera and what moves on its own.** Turning and moving blur the world by how far each pixel
-  travelled. Things the game draws on the CPU blur by their own motion too (limbs included), and the
-  first-person hand can blur as it swings and bobs (off by default). Without a shader pack or frame
-  generation, Sunrise poses mobs on the GPU, where a mod can't see them: they blur with the camera's
-  motion only, as in other motion blur mods.
-- **The same at any frame rate.** By default the streak a motion leaves doesn't depend on your FPS.
-  The *Cinematic* mode behaves like a film camera instead: half of each frame, so it gets longer as the
-  frame rate drops.
+  travelled. Things the game draws on the CPU blur by their own motion too. Without a shader pack or
+  frame generation, Sunrise poses mobs on the GPU, where a mod can't see them: they blur with the
+  camera's motion only, as in other motion blur mods. The hand, the HUD and menus stay sharp.
+- **The same at any frame rate.** The streak a motion leaves doesn't depend on your FPS.
 - **Lightweight.** Off, or with nothing on screen moving, it does no GPU work at all. Where nothing moves
-  near a pixel, the blur skips it after a handful of reads. One small dependency (`bytemuck`). The HUD
-  and menus are never blurred.
+  near a pixel, the blur skips it after a handful of reads. One small dependency (`bytemuck`).
 
 ## Settings
 
@@ -21,12 +17,7 @@ A native [Sunrise](https://github.com/sunrise-org/sunrise) mod that adds smooth,
 | Setting | Default | |
 |---|---|---|
 | Motion Blur | On | Off turns the mod off completely. |
-| Strength | 100% | Length of the streaks. 100% is a 180° shutter at 60 FPS. |
-| Frame Rate | Consistent | *Consistent* or *Cinematic* (see above). |
-| Quality | Medium | Samples per blurred pixel: 6, 10, 16 or 24. |
-| Longest Streak | 4% | The longest a streak can get, as a share of the screen's height. |
-| Moving Mobs | On | Blur mobs by their own motion. |
-| Hand | Off | Blur the first-person hand. |
+| Strength | 100 | How strong the blur is, from 0 to 200. |
 
 ## How it works
 

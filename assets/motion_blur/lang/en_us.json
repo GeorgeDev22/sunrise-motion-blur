@@ -1,22 +1,5 @@
 {
   "motion_blur.setting.enabled": "Motion Blur",
-  "motion_blur.setting.enabled.tooltip": "Blur what moves on screen. Turned off, the mod does nothing at all.",
-  "motion_blur.setting.strength": "Strength (%)",
-  "motion_blur.setting.strength.tooltip": "How strong the blur is.",
-  "motion_blur.setting.mode": "Frame Rate",
-  "motion_blur.setting.mode.tooltip": "Consistent: the same blur at any FPS. Cinematic: more blur when your FPS is low, like a film camera.",
-  "motion_blur.setting.mode.consistent": "Consistent",
-  "motion_blur.setting.mode.cinematic": "Cinematic",
-  "motion_blur.setting.quality": "Quality",
-  "motion_blur.setting.quality.tooltip": "Higher looks smoother on fast movement and costs a little more.",
-  "motion_blur.setting.quality.low": "Low",
-  "motion_blur.setting.quality.medium": "Medium",
-  "motion_blur.setting.quality.high": "High",
-  "motion_blur.setting.quality.ultra": "Ultra",
-  "motion_blur.setting.max_length": "Longest Streak (%)",
-  "motion_blur.setting.max_length.tooltip": "How far the blur can stretch on very fast movement.",
-  "motion_blur.setting.moving_objects": "Moving Mobs",
-  "motion_blur.setting.moving_objects.tooltip": "Blur moving mobs, players and items too, not only the world as you look around.",
-  "motion_blur.setting.hand": "Hand",
-  "motion_blur.setting.hand.tooltip": "Blur the first-person hand and held item as they swing and bob."
+  "motion_blur.setting.strength": "Strength",
+  "motion_blur.setting.strength.tooltip": "How strong the blur is."
 }

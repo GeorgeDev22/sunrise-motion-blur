@@ -5,7 +5,7 @@
 //! head and spin included. One whose model changed (armour put on, a baby growing up) is
 //! skipped for a frame and the camera's motion covers it.
 
-use crate::{Mat4, MotionVertex};
+use crate::MotionVertex;
 use std::collections::HashMap;
 
 /// Motion below this (in blocks) is no motion: float noise in the game's own vertex maths.
@@ -93,52 +93,6 @@ impl MeshHistory {
     }
 }
 
-/// The first-person hand and the item it holds, which the game draws with a camera of its own.
-#[derive(Debug, Default)]
-pub struct HandHistory {
-    previous: Vec<[f32; 3]>,
-    previous_view_proj: Option<Mat4>,
-}
-
-impl HandHistory {
-    /// This frame's hand: `count` vertices, `vertex(i)` its camera-relative position and atlas
-    /// UV, drawn with `view_proj`. Writes every vertex to `out` (the hand covers what lies
-    /// behind it, moving or not) and returns last frame's matrix to reproject them with.
-    /// A hand whose shape changed (another item) gets no motion this frame.
-    pub fn update(
-        &mut self,
-        count: usize,
-        vertex: impl Fn(usize) -> ([f32; 3], [f32; 2]),
-        view_proj: Mat4,
-        out: &mut Vec<MotionVertex>,
-    ) -> Mat4 {
-        out.clear();
-        let matched = self.previous.len() == count && self.previous_view_proj.is_some();
-        out.extend((0..count).map(|i| {
-            let (position, uv) = vertex(i);
-            let previous = if matched { self.previous[i] } else { position };
-            MotionVertex {
-                position,
-                previous,
-                uv,
-            }
-        }));
-        let previous_view_proj = match self.previous_view_proj {
-            Some(before) if matched => before,
-            _ => view_proj,
-        };
-        self.previous.clear();
-        self.previous.extend(out.iter().map(|v| v.position));
-        self.previous_view_proj = Some(view_proj);
-        previous_view_proj
-    }
-
-    pub fn reset(&mut self) {
-        self.previous.clear();
-        self.previous_view_proj = None;
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -220,22 +174,5 @@ mod tests {
             frame(&mut history, &[(ZOMBIE, moved)], Some([0.0; 3])).len(),
             8
         );
-    }
-
-    #[test]
-    fn the_hand_reprojects_with_last_frames_camera() {
-        let mut hand = HandHistory::default();
-        let mut out = Vec::new();
-        let first = Mat4::IDENTITY;
-        let mut second = Mat4::IDENTITY;
-        second.0[12] = 0.1;
-        let vertex = |x: f32| move |i: usize| ([x + i as f32, 0.0, -1.0], [0.0, 0.0]);
-
-        assert_eq!(hand.update(4, vertex(0.0), first, &mut out), first);
-        assert_eq!(out[0].previous, out[0].position);
-
-        assert_eq!(hand.update(4, vertex(0.2), second, &mut out), first);
-        assert_eq!(out[0].position, [0.2, 0.0, -1.0]);
-        assert_eq!(out[0].previous, [0.0, 0.0, -1.0]);
     }
 }
