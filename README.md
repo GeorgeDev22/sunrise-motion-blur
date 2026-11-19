@@ -54,3 +54,7 @@ Every push builds the mod on GitHub Actions too, and uploads the `.smod` and a g
 
 The mod is pinned to one Sunrise build (`[native]` in `sunrise-mod.toml`). `cargo sunrise-mod update`
 moves it to the current Nightly.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
