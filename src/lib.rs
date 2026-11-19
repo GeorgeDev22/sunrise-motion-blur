@@ -14,7 +14,7 @@ mod frame;
 mod settings;
 
 // For the mixin helpers.
-pub use frame::{Hand, Kept, Work, World, active, recycle, work, world_drawn};
+pub use frame::{Hand, Kept, Work, World, active, follows_objects, recycle, work, world_drawn};
 pub use motion_blur_core::{BlurParams, MotionVertex, SHADER};
 
 use mod_api::{

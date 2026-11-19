@@ -110,6 +110,14 @@ pub fn active() -> bool {
     settings::current().active()
 }
 
+/// Whether the mod follows things that move on their own. The game hands mods only the
+/// entities it draws on the CPU, so asking for them keeps mobs off its GPU posing path where
+/// it can (with Sunrise's shader packs and frame generation).
+pub fn follows_objects() -> bool {
+    let settings = settings::current();
+    settings.active() && settings.moving_objects
+}
+
 pub fn world_drawn(world: World<'_>) {
     let settings = settings::current();
     let mut frames = frames();

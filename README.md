@@ -3,8 +3,10 @@
 A native [Sunrise](https://github.com/sunrise-org/sunrise) mod that adds smooth, per-pixel motion blur.
 
 - **The camera and what moves on its own.** Turning and moving blur the world by how far each pixel
-  travelled. Mobs, players and dropped items blur by their own motion too, limbs included. The
-  first-person hand can blur as it swings and bobs (off by default).
+  travelled. Things the game draws on the CPU blur by their own motion too (limbs included), and the
+  first-person hand can blur as it swings and bobs (off by default). Without a shader pack or frame
+  generation, Sunrise poses mobs on the GPU, where a mod can't see them: they blur with the camera's
+  motion only, as in other motion blur mods.
 - **The same at any frame rate.** By default the streak a motion leaves doesn't depend on your FPS.
   The *Cinematic* mode behaves like a film camera instead: half of each frame, so it gets longer as the
   frame rate drops.
