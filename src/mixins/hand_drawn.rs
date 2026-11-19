@@ -19,7 +19,13 @@ fn hand_drawn(hand: &mut HandDrawn<'_>) {
         *gpu = None;
         return;
     }
-    let Some(work) = mod_motion_blur::work(hand) else {
+    // Without the atlas the hand's cut-out texels can't be told apart: leave it out.
+    let vertices = if hand.atlas.is_some() { hand.hand } else { &[] };
+    let Some(work) = mod_motion_blur::work(mod_motion_blur::Hand {
+        view_proj: hand.view_proj.to_cols_array(),
+        vertices: vertices.len(),
+        vertex: &|i| (vertices[i].pos, vertices[i].uv),
+    }) else {
         return;
     };
     if gpu.as_ref().is_none_or(|gpu| gpu.device != *hand.device) {

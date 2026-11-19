@@ -4,9 +4,11 @@
 //! Once the hand is drawn over it (`work`), the hand's motion joins in and the GPU half
 //! (`src/mixins/hand_drawn.rs`) is handed a [`Work`] to draw. The HUD comes after, so it stays
 //! sharp. When nothing on screen moves there is no `Work`, and the GPU does nothing.
+//!
+//! The game's frame types can't be named here, only in the mixin helpers, so the helpers read
+//! the frame into a [`World`] and a [`Hand`] and keep its GPU objects as [`Kept`] values.
 
 use crate::settings;
-use internals::sunrise_mod_render::render::{HandDrawn, RenderNeeds, WorldDrawn};
 use motion_blur_core::{
     BlurParams, CameraHistory, FrameClock, HandHistory, Mat4, MeshHistory, MotionVertex,
 };
@@ -19,6 +21,39 @@ const MIN_TILE: u32 = 8;
 const MAX_TILE: u32 = 64;
 
 static FRAMES: LazyLock<Mutex<Frames>> = LazyLock::new(Default::default);
+
+/// A GPU object of the game's, which only the helpers can name: the world's depth view and its
+/// quad index buffer, kept from one helper to the other.
+pub type Kept = Box<dyn Any + Send + Sync>;
+
+/// The drawn world, as the `world_drawn` helper reads it.
+pub struct World<'a> {
+    /// Camera-relative world to clip space, without TAA's jitter, and with it.
+    pub view_proj: [f32; 16],
+    pub jittered: [f32; 16],
+    /// The camera's position in the world.
+    pub camera: [f64; 3],
+    /// The picture's size and the world depth's, in pixels.
+    pub size: [u32; 2],
+    pub depth_size: [u32; 2],
+    /// Which entity each run of the entity vertices is (the game's `motion` field).
+    pub motion: &'a [(u32, u64)],
+    /// How many entity vertices there are, and where vertex `i` is, camera-relative.
+    pub entities: usize,
+    pub entity_position: &'a dyn Fn(usize) -> [f32; 3],
+    /// Keeps the depth view and the quad indices, when the frame is blurred.
+    pub keep: &'a dyn Fn() -> (Kept, Kept),
+}
+
+/// The drawn hand, as the `hand_drawn` helper reads it.
+pub struct Hand<'a> {
+    /// The hand's own camera-relative world to clip space.
+    pub view_proj: [f32; 16],
+    /// How many hand vertices there are (0 in third person, or without an atlas to read its
+    /// cut-outs from), and vertex `i`'s position and atlas UV.
+    pub vertices: usize,
+    pub vertex: &'a dyn Fn(usize) -> ([f32; 3], [f32; 2]),
+}
 
 /// One frame's blur, for the GPU half to draw.
 pub struct Work {
@@ -33,16 +68,16 @@ pub struct Work {
     /// Whether anything in the world moved: if not, only the hand did.
     pub world_moved: bool,
     /// The world's depth view and its quad index buffer, kept from `world_drawn`.
-    pub depth: Box<dyn Any + Send + Sync>,
-    pub quad_indices: Box<dyn Any + Send + Sync>,
+    pub depth: Kept,
+    pub quad_indices: Kept,
 }
 
 /// What the world step leaves for the hand step of the same frame.
 struct Pending {
     params: BlurParams,
     world_moved: bool,
-    depth: Box<dyn Any + Send + Sync>,
-    quad_indices: Box<dyn Any + Send + Sync>,
+    depth: Kept,
+    quad_indices: Kept,
 }
 
 #[derive(Default)]
@@ -75,13 +110,7 @@ pub fn active() -> bool {
     settings::current().active()
 }
 
-pub fn render_needs(needs: &mut RenderNeeds) {
-    if active() {
-        needs.world_depth = true;
-    }
-}
-
-pub fn world_drawn(world: &mut WorldDrawn<'_>) {
+pub fn world_drawn(world: World<'_>) {
     let settings = settings::current();
     let mut frames = frames();
     let frames = &mut *frames;
@@ -92,16 +121,14 @@ pub fn world_drawn(world: &mut WorldDrawn<'_>) {
     frames.pending = None;
 
     let frame_seconds = frames.clock.tick(Instant::now());
-    let view_proj = Mat4(world.view_proj.to_cols_array());
-    let camera = [world.camera.x, world.camera.y, world.camera.z];
-    let reprojection = frames.camera.advance(view_proj, camera);
+    let view_proj = Mat4(world.view_proj);
+    let reprojection = frames.camera.advance(view_proj, world.camera);
 
     let objects_moved = if settings.moving_objects {
-        let entities = world.entities;
         frames.meshes.update(
             world.motion,
-            entities.len(),
-            |i| entities[i].pos,
+            world.entities,
+            world.entity_position,
             reprojection.map(|r| r.camera_motion),
             &mut frames.objects,
         )
@@ -125,12 +152,13 @@ pub fn world_drawn(world: &mut WorldDrawn<'_>) {
     let height = world.size[1];
     let tile_size = (settings.max_radius(height).ceil() as u32).clamp(MIN_TILE, MAX_TILE);
     let [x, y, z] = reprojection.camera_motion;
+    let (depth, quad_indices) = (world.keep)();
     frames.pending = Some(Pending {
         params: BlurParams {
             view_proj: view_proj.0,
             inverse_view_proj: inverse.0,
             previous_view_proj: reprojection.previous_view_proj.0,
-            jittered: world.jittered.to_cols_array(),
+            jittered: world.jittered,
             camera_motion: [x, y, z, 0.0],
             size: world.size.map(|n| n as f32),
             depth_size: world.depth_size.map(|n| n as f32),
@@ -140,13 +168,13 @@ pub fn world_drawn(world: &mut WorldDrawn<'_>) {
             samples: settings.quality.samples(),
         },
         world_moved,
-        depth: Box::new(world.depth.clone()),
-        quad_indices: Box::new(world.quad_indices.clone()),
+        depth,
+        quad_indices,
     });
 }
 
 /// The frame's blur, once the hand is drawn: `None` when nothing on screen moves.
-pub fn work(hand: &HandDrawn<'_>) -> Option<Work> {
+pub fn work(hand: Hand<'_>) -> Option<Work> {
     let settings = settings::current();
     let mut frames = frames();
     let frames = &mut *frames;
@@ -157,11 +185,10 @@ pub fn work(hand: &HandDrawn<'_>) -> Option<Work> {
     if !settings.hand {
         frames.hand.reset();
     }
-    let view_proj = Mat4(hand.view_proj.to_cols_array());
-    let vertices = if hand.atlas.is_some() { hand.hand } else { &[] };
+    let view_proj = Mat4(hand.view_proj);
     let previous_view_proj = frames.hand.update(
-        vertices.len(),
-        |i| (vertices[i].pos, vertices[i].uv),
+        hand.vertices,
+        hand.vertex,
         view_proj,
         &mut frames.hand_vertices,
     );

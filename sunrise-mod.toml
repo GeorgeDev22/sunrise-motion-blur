@@ -7,22 +7,13 @@ api = "0.2"
 side = "client"
 capabilities = ["registries"]
 
-# The frames the render functions hand over, which the mod reads.
-[[internals]]
-path = "sunrise_mod_render::render::WorldDrawn"
-
-[[internals]]
-path = "sunrise_mod_render::render::HandDrawn"
-
-[[internals]]
-path = "sunrise_mod_render::render::RenderNeeds"
-
 [native]
 game = "26.3"
 sunrise = "2d8126336e579777eabf9b2fd8b3d476236a04f2"
 mixins = "e59da9094f0c2fdda6c627fe9eff22dec6a906f0"
 
-# The game calls these as it draws each frame; each helper hands the frame to the mod's crate.
+# The game calls these as it draws each frame. Its frame types and wgpu can only be named in
+# these helpers, so they read the frame and draw; the mod's crate decides what.
 
 [[native.mixin]]
 id = "render_needs"

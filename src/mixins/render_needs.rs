@@ -1,3 +1,6 @@
 fn render_needs(needs: &mut RenderNeeds) {
-    mod_motion_blur::render_needs(needs);
+    // The blur reads the world's depth.
+    if mod_motion_blur::active() {
+        needs.world_depth = true;
+    }
 }
