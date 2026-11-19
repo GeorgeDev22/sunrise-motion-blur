@@ -1,7 +1,7 @@
 id = "motion_blur"
 name = "Motion Blur"
 version = "0.1.0"
-description = "Smooth per-pixel motion blur for the camera, mobs and the hand, the same at any frame rate."
+description = "Adds smooth motion blur."
 authors = ["GeorgeDev22"]
 api = "0.2"
 side = "client"
