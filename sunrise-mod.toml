@@ -7,9 +7,15 @@ api = "0.2"
 side = "client"
 capabilities = ["registries"]
 
-# The frame the mod blurs: the render functions' types and the game's own wgpu.
+# The frames the render functions hand over, which the mod reads.
 [[internals]]
-path = "sunrise_mod_render::render"
+path = "sunrise_mod_render::render::WorldDrawn"
+
+[[internals]]
+path = "sunrise_mod_render::render::HandDrawn"
+
+[[internals]]
+path = "sunrise_mod_render::render::RenderNeeds"
 
 [native]
 game = "26.3"

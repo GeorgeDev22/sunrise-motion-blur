@@ -1,15 +1,21 @@
 //! Motion blur for Sunrise: every pixel is smeared along the way it moved since the last frame,
 //! by the camera's motion and, for mobs, players, dropped items and the hand, by their own.
 //!
-//! The game calls into `render` through three render functions it lets native mods take over
-//! (the `[[native.mixin]]` rows in `sunrise-mod.toml`, whose helpers are in `src/mixins/`).
-//! What doesn't need the game, the shader included, lives in `motion-blur-core` (`src/core/`),
-//! where it is tested.
+//! The game hands the mod each frame through three render functions a native mod takes over
+//! (the `[[native.mixin]]` rows in `sunrise-mod.toml`, whose helpers are in `src/mixins/`):
+//!
+//! - `frame` decides what to blur, on the CPU;
+//! - `src/mixins/hand_drawn.rs` draws it. It lives in the helper because only code compiled
+//!   beside the game's render functions can use the game's own `wgpu`;
+//! - what doesn't need the game, the shader included, is in `motion-blur-core` (`src/core/`),
+//!   where it is tested.
 
-mod render;
+mod frame;
 mod settings;
 
-pub use render::{hand_drawn, render_needs, world_drawn};
+// For the mixin helpers.
+pub use frame::{Work, active, recycle, render_needs, work, world_drawn};
+pub use motion_blur_core::{BlurParams, MotionVertex, SHADER};
 
 use mod_api::{
     ClientHost, ClientLevelLoadEvent, Hooks, Registrar, RegistrationContext, SettingChangedEvent,
