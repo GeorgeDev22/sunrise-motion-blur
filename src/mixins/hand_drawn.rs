@@ -76,9 +76,9 @@ fn hand_drawn(hand: &mut HandDrawn<'_>) {
             });
             let hand_depth = wgpu::DepthStencilState {
                 format: HAND_DEPTH,
-                depth_write_enabled: true,
+                depth_write_enabled: Some(true),
                 // Reversed depth, as the game draws it: nearer is larger.
-                depth_compare: wgpu::CompareFunction::GreaterEqual,
+                depth_compare: Some(wgpu::CompareFunction::GreaterEqual),
                 stencil: Default::default(),
                 bias: Default::default(),
             };
