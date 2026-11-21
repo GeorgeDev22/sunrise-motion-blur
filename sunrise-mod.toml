@@ -1,6 +1,6 @@
 id = "motion_blur"
 name = "Motion Blur"
-version = "0.1.0"
+version = "0.1.1"
 description = "Adds smooth motion blur."
 authors = ["GeorgeDev22"]
 license = "MIT"
@@ -12,7 +12,7 @@ capabilities = ["registries"]
 
 [native]
 game = "26.3"
-sunrise = "2d8126336e579777eabf9b2fd8b3d476236a04f2"
+sunrise = "94256510f74e6843754e0a93fd9e4da7e45b1056"
 mixins = "e59da9094f0c2fdda6c627fe9eff22dec6a906f0"
 
 # The game calls these as it draws each frame. Its frame types and wgpu can only be named in

@@ -46,17 +46,16 @@ jobs:
           }
 
           install_from "sdk-$build"
-          # A tool older than the docs answers --version with its usage: take the newest one.
-          if ! "$HOME/.local/bin/cargo-sunrise-mod" sunrise-mod --version | grep -qE '^[0-9a-f]{7,}'; then
-            install_from mod-tool
-          fi
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Build the mod against the pinned game
         run: cargo sunrise-mod build --update-lock
 
       - name: Check the package
-        run: cargo sunrise-mod check target/sunrise-mod/motion_blur.smod
+        run: |
+          cargo sunrise-mod check target/sunrise-mod/motion_blur.smod
+          build=$(sed -n 's/^sunrise = "\([0-9a-f]\{40\}\)"/\1/p' sunrise-mod.toml)
+          cargo sunrise-mod fits target/sunrise-mod/motion_blur.smod --build "$build"
 
       # `run` stages the game with the mod under target/sunrise-mod/run/app before starting it.
       # Here it has no prepared resources and stops at once; the staged folder is what we keep.

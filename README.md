@@ -52,8 +52,9 @@ cargo sunrise-mod run --resources <prepared resources> -- --world Test --creativ
 
 Every push builds the mod on GitHub Actions too, and uploads the `.smod` and a game with the mod in it.
 
-The mod is pinned to one Sunrise build (`[native]` in `sunrise-mod.toml`). `cargo sunrise-mod update`
-moves it to the current Nightly.
+Build with the tool from the SDK pinned in `sunrise-mod.toml`. The package tracks the API and render hooks
+it uses, so Sunrise can rebuild it for compatible game builds. Check a build with
+`cargo sunrise-mod fits target/sunrise-mod/motion_blur.smod --build <build>`.
 
 ## License
 
