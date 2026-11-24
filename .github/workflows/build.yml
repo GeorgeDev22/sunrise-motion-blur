@@ -58,11 +58,11 @@ jobs:
           cargo sunrise-mod check target/sunrise-mod/motion_blur.smod --build "$build"
 
       # `run` stages the game with the mod under target/sunrise-mod/run/app before starting it.
-      # Here it has no prepared resources and stops at once; the staged folder is what we keep.
+      # Here the game only prints its --help and exits; the staged folder is what we keep.
       - name: Stage the game with the mod
         run: |
           mkdir -p "$RUNNER_TEMP/no-resources"
-          timeout 120 cargo sunrise-mod run --resources "$RUNNER_TEMP/no-resources" -- --version || true
+          timeout 120 cargo sunrise-mod run --resources "$RUNNER_TEMP/no-resources" -- --help > /dev/null || true
           test -f target/sunrise-mod/run/app/native-mods.json
           ls -la target/sunrise-mod/run/app
 
