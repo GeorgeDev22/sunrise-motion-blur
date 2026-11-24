@@ -1,6 +1,6 @@
 id = "motion_blur"
 name = "Motion Blur"
-version = "0.1.2"
+version = "0.1.3"
 description = "Adds smooth motion blur."
 authors = ["GeorgeDev22"]
 license = "MIT"
