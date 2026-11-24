@@ -85,6 +85,7 @@ struct Frames {
     objects: Vec<MotionVertex>,
     hand_vertices: Vec<MotionVertex>,
     pending: Option<Pending>,
+    frame: u32,
 }
 
 impl Frames {
@@ -139,21 +140,29 @@ pub fn world_drawn(world: World<'_>) {
 
     let height = world.size[1];
     let tile_size = (settings.max_radius(height).ceil() as u32).clamp(MIN_TILE, MAX_TILE);
-    let [x, y, z] = reprojection.camera_motion;
+    let reproject = Mat4::reproject(
+        &reprojection.previous_view_proj,
+        reprojection.camera_motion,
+        &inverse,
+    );
+    frames.frame = frames.frame.wrapping_add(1);
     let (depth, quad_indices) = (world.keep)();
     frames.pending = Some(Pending {
         params: BlurParams {
             view_proj: view_proj.0,
-            inverse_view_proj: inverse.0,
+            reproject: reproject.0,
             previous_view_proj: reprojection.previous_view_proj.0,
             jittered: world.jittered,
-            camera_motion: [x, y, z, 0.0],
+            inv_view_proj_row3: inverse.row(3),
             size: world.size.map(|n| n as f32),
             depth_size: world.depth_size.map(|n| n as f32),
             exposure: settings.exposure(frame_seconds),
             max_radius: settings.max_radius(height).min(tile_size as f32),
             tile_size,
             samples: SAMPLES,
+            frame: frames.frame,
+            linearize: 0,
+            _pad: [0; 2],
         },
         depth,
         quad_indices,

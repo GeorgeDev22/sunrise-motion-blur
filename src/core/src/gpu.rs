@@ -26,13 +26,14 @@ impl MotionVertex {
 pub struct BlurParams {
     /// Camera-relative world to clip space, without TAA's jitter.
     pub view_proj: [f32; 16],
-    pub inverse_view_proj: [f32; 16],
+    /// Combined `previous_view_proj * translate(camera_motion) * inverse_view_proj`.
+    pub reproject: [f32; 16],
     /// Last frame's `view_proj`.
     pub previous_view_proj: [f32; 16],
     /// What the geometry was rasterized with, jitter included.
     pub jittered: [f32; 16],
-    /// xyz: the camera's motion since last frame, in blocks.
-    pub camera_motion: [f32; 4],
+    /// Fourth row of `inverse_view_proj`, for 1-dot linear view depth.
+    pub inv_view_proj_row3: [f32; 4],
     /// The picture's size and the world depth's, in pixels.
     pub size: [f32; 2],
     pub depth_size: [f32; 2],
@@ -42,6 +43,11 @@ pub struct BlurParams {
     pub max_radius: f32,
     pub tile_size: u32,
     pub samples: u32,
+    /// Monotonic frame counter for temporal noise dithering.
+    pub frame: u32,
+    /// Non-zero when the color buffer is non-sRGB Unorm and should be linearized during blending.
+    pub linearize: u32,
+    pub _pad: [u32; 2],
 }
 
 impl BlurParams {

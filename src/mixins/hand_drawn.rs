@@ -36,10 +36,10 @@ fn hand_drawn(hand: &mut HandDrawn<'_>) {
     drop(gpu);
     mod_motion_blur::recycle(work);
 
-    /// Blur radius in pixels (xy) and distance from the camera in blocks (z), per pixel.
-    const MOTION: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
-    /// The longest blur radius in each tile.
-    const TILE: wgpu::TextureFormat = wgpu::TextureFormat::Rg16Float;
+    /// Packed blur radius (rg, 10-bit each) and log-encoded view depth (b, 10-bit), 4 B/px.
+    const MOTION: wgpu::TextureFormat = wgpu::TextureFormat::Rgb10a2Unorm;
+    /// Longest blur radius (xy) and velocity spread (z) in each tile.
+    const TILE: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
     /// The hand's own depth, so its nearer faces win.
     const HAND_DEPTH: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
@@ -51,6 +51,7 @@ fn hand_drawn(hand: &mut HandDrawn<'_>) {
         hand: wgpu::RenderPipeline,
         tile_rows: wgpu::RenderPipeline,
         tile_columns: wgpu::RenderPipeline,
+        neighbor_max: wgpu::RenderPipeline,
         /// Writes into the frame, so it is made for the frame's format.
         reconstruct: Option<(wgpu::TextureFormat, wgpu::RenderPipeline)>,
         atlas_sampler: wgpu::Sampler,
@@ -82,6 +83,7 @@ fn hand_drawn(hand: &mut HandDrawn<'_>) {
                 hand: moving_pipeline(device, &module, "hand_motion", Some(hand_depth)),
                 tile_rows: fullscreen_pipeline(device, &module, "tile_max_rows", TILE),
                 tile_columns: fullscreen_pipeline(device, &module, "tile_max_columns", TILE),
+                neighbor_max: fullscreen_pipeline(device, &module, "neighbor_max", TILE),
                 reconstruct: None,
                 atlas_sampler: sampler(device, wgpu::FilterMode::Nearest),
                 smooth_sampler: sampler(device, wgpu::FilterMode::Linear),
@@ -98,16 +100,6 @@ fn hand_drawn(hand: &mut HandDrawn<'_>) {
         fn draw(&mut self, hand: &mut HandDrawn<'_>, work: &mod_motion_blur::Work) {
             let size = hand.size;
             let tile_size = work.params.tile_size;
-            if !self.targets.as_ref().is_some_and(|t| {
-                t.size == size && t.format == hand.color_format && t.tile_size == tile_size
-            }) {
-                self.targets = Some(Targets::new(
-                    &self.device,
-                    size,
-                    hand.color_format,
-                    tile_size,
-                ));
-            }
             if self
                 .reconstruct
                 .as_ref()
@@ -121,10 +113,31 @@ fn hand_drawn(hand: &mut HandDrawn<'_>) {
                 );
                 self.reconstruct = Some((hand.color_format, pipeline));
             }
+            let reconstruct = &self.reconstruct.as_ref().expect("made above").1;
+            if !self.targets.as_ref().is_some_and(|t| {
+                t.size == size && t.format == hand.color_format && t.tile_size == tile_size
+            }) {
+                self.targets = Some(Targets::new(
+                    &self.device,
+                    size,
+                    hand.color_format,
+                    tile_size,
+                    &self.params,
+                    &self.smooth_sampler,
+                    &self.tile_rows,
+                    &self.tile_columns,
+                    &self.neighbor_max,
+                    reconstruct,
+                ));
+            }
             let targets = self.targets.as_ref().expect("made above");
             let encoder = &mut *hand.encoder;
-            hand.queue
-                .write_buffer(&self.params, 0, work.params.bytes());
+            let mut params = work.params;
+            params.linearize = matches!(
+                hand.color_format,
+                wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Rgba8Unorm
+            ) as u32;
+            hand.queue.write_buffer(&self.params, 0, params.bytes());
 
             // 1. Motion.
             let Some(depth) = work.depth.downcast_ref::<wgpu::TextureView>() else {
@@ -136,11 +149,13 @@ fn hand_drawn(hand: &mut HandDrawn<'_>) {
                 &self.camera,
                 &[(0, self.params.as_entire_binding()), (1, depth.clone())],
             );
-            let mut pass = begin(encoder, "Motion blur camera", &targets.motion, None, None);
-            pass.set_pipeline(&self.camera);
-            pass.set_bind_group(0, &group, &[]);
-            pass.draw(0..3, 0..1);
-            drop(pass);
+            fullscreen(
+                encoder,
+                "Motion blur camera",
+                &targets.motion,
+                &self.camera,
+                &group,
+            );
 
             let indices = work.quad_indices.downcast_ref::<wgpu::Buffer>();
             if let Some(indices) = indices.filter(|_| work.objects.len() >= 4) {
@@ -191,36 +206,27 @@ fn hand_drawn(hand: &mut HandDrawn<'_>) {
                 draw_quads(&mut pass, &vertices, hand.quad_indices, work.hand.len());
             }
 
-            // 2. Tiles.
-            let rows = bind(
-                &self.device,
-                &self.tile_rows,
-                &[
-                    (0, self.params.as_entire_binding()),
-                    (4, wgpu::BindingResource::TextureView(&targets.motion)),
-                ],
-            );
+            // 2. Tiles + 3x3 neighbourhood max (once per tile).
             fullscreen(
                 encoder,
                 "Motion blur tile rows",
                 &targets.tile_rows,
                 &self.tile_rows,
-                &rows,
-            );
-            let columns = bind(
-                &self.device,
-                &self.tile_columns,
-                &[
-                    (0, self.params.as_entire_binding()),
-                    (5, wgpu::BindingResource::TextureView(&targets.tile_rows)),
-                ],
+                &targets.tile_rows_group,
             );
             fullscreen(
                 encoder,
                 "Motion blur tiles",
                 &targets.tiles,
                 &self.tile_columns,
-                &columns,
+                &targets.tile_cols_group,
+            );
+            fullscreen(
+                encoder,
+                "Motion blur neighbor max",
+                &targets.neighbor_tiles,
+                &self.neighbor_max,
+                &targets.neighbor_group,
             );
 
             // 3. The blur, from a copy of the frame into the frame.
@@ -229,42 +235,47 @@ fn hand_drawn(hand: &mut HandDrawn<'_>) {
                 targets.scene.as_image_copy(),
                 hand.color.size(),
             );
-            let reconstruct = &self.reconstruct.as_ref().expect("made above").1;
-            let group = bind(
-                &self.device,
+            fullscreen(
+                encoder,
+                "Motion blur",
+                hand.color_view,
                 reconstruct,
-                &[
-                    (0, self.params.as_entire_binding()),
-                    (4, wgpu::BindingResource::TextureView(&targets.motion)),
-                    (6, wgpu::BindingResource::TextureView(&targets.tiles)),
-                    (7, wgpu::BindingResource::TextureView(&targets.scene_view)),
-                    (8, wgpu::BindingResource::Sampler(&self.smooth_sampler)),
-                ],
+                &targets.reconstruct_group,
             );
-            fullscreen(encoder, "Motion blur", hand.color_view, reconstruct, &group);
         }
     }
 
-    /// The textures the blur draws into, made again when the frame's size or format changes.
+    /// The textures and cached bind groups the blur uses, rebuilt on resize or format change.
     struct Targets {
         size: [u32; 2],
         format: wgpu::TextureFormat,
         tile_size: u32,
         /// A copy of the frame: the blur reads it while writing the frame.
         scene: wgpu::Texture,
-        scene_view: wgpu::TextureView,
         motion: wgpu::TextureView,
         tile_rows: wgpu::TextureView,
         tiles: wgpu::TextureView,
+        neighbor_tiles: wgpu::TextureView,
         hand_depth: wgpu::TextureView,
+        tile_rows_group: wgpu::BindGroup,
+        tile_cols_group: wgpu::BindGroup,
+        neighbor_group: wgpu::BindGroup,
+        reconstruct_group: wgpu::BindGroup,
     }
 
     impl Targets {
+        #[allow(clippy::too_many_arguments)]
         fn new(
             device: &wgpu::Device,
             size: [u32; 2],
             format: wgpu::TextureFormat,
             tile_size: u32,
+            params: &wgpu::Buffer,
+            smooth_sampler: &wgpu::Sampler,
+            tile_rows_pipe: &wgpu::RenderPipeline,
+            tile_cols_pipe: &wgpu::RenderPipeline,
+            neighbor_pipe: &wgpu::RenderPipeline,
+            reconstruct_pipe: &wgpu::RenderPipeline,
         ) -> Self {
             let [width, height] = size;
             let tiles_wide = width.div_ceil(tile_size);
@@ -273,24 +284,71 @@ fn hand_drawn(hand: &mut HandDrawn<'_>) {
                 wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING;
             let copied = wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING;
             let scene = texture(device, "Motion blur scene", size, format, copied);
+            let scene_view = scene.create_view(&Default::default());
             let view = |label, size, format, usage| {
                 texture(device, label, size, format, usage).create_view(&Default::default())
             };
+            let motion = view("Motion blur motion", size, MOTION, drawn);
+            let tile_rows = view("Motion blur tile rows", [tiles_wide, height], TILE, drawn);
+            let tiles = view("Motion blur tiles", [tiles_wide, tiles_high], TILE, drawn);
+            let neighbor_tiles = view(
+                "Motion blur neighbor tiles",
+                [tiles_wide, tiles_high],
+                TILE,
+                drawn,
+            );
+            let hand_depth = view(
+                "Motion blur hand depth",
+                size,
+                HAND_DEPTH,
+                wgpu::TextureUsages::RENDER_ATTACHMENT,
+            );
+            let tile_rows_group = bind(
+                device,
+                tile_rows_pipe,
+                &[
+                    (0, params.as_entire_binding()),
+                    (4, wgpu::BindingResource::TextureView(&motion)),
+                ],
+            );
+            let tile_cols_group = bind(
+                device,
+                tile_cols_pipe,
+                &[
+                    (0, params.as_entire_binding()),
+                    (5, wgpu::BindingResource::TextureView(&tile_rows)),
+                ],
+            );
+            let neighbor_group = bind(
+                device,
+                neighbor_pipe,
+                &[(6, wgpu::BindingResource::TextureView(&tiles))],
+            );
+            let reconstruct_group = bind(
+                device,
+                reconstruct_pipe,
+                &[
+                    (0, params.as_entire_binding()),
+                    (4, wgpu::BindingResource::TextureView(&motion)),
+                    (6, wgpu::BindingResource::TextureView(&neighbor_tiles)),
+                    (7, wgpu::BindingResource::TextureView(&scene_view)),
+                    (8, wgpu::BindingResource::Sampler(smooth_sampler)),
+                ],
+            );
             Self {
                 size,
                 format,
                 tile_size,
-                scene_view: scene.create_view(&Default::default()),
                 scene,
-                motion: view("Motion blur motion", size, MOTION, drawn),
-                tile_rows: view("Motion blur tile rows", [tiles_wide, height], TILE, drawn),
-                tiles: view("Motion blur tiles", [tiles_wide, tiles_high], TILE, drawn),
-                hand_depth: view(
-                    "Motion blur hand depth",
-                    size,
-                    HAND_DEPTH,
-                    wgpu::TextureUsages::RENDER_ATTACHMENT,
-                ),
+                motion,
+                tile_rows,
+                tiles,
+                neighbor_tiles,
+                hand_depth,
+                tile_rows_group,
+                tile_cols_group,
+                neighbor_group,
+                reconstruct_group,
             }
         }
     }

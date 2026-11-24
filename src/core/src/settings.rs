@@ -1,5 +1,6 @@
-/// Samples each blurred pixel takes: smooth on long streaks, light enough for integrated GPUs.
-pub const SAMPLES: u32 = 10;
+/// Maximum samples each blurred pixel takes on fast motion (adaptive sampling uses fewer on
+/// gentle motion, so high-contrast fast turns stay silky without hurting normal gameplay FPS).
+pub const SAMPLES: u32 = 12;
 
 /// The longest streak, as a share of the screen's height.
 const MAX_LENGTH: f32 = 0.04;

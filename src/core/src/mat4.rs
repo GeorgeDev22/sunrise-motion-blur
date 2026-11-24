@@ -100,6 +100,40 @@ impl Mat4 {
         }
         Mat4(out)
     }
+
+    /// A translation matrix by `[x, y, z]`.
+    pub fn translation([x, y, z]: [f32; 3]) -> Mat4 {
+        Mat4([
+            1.0, 0.0, 0.0, 0.0, //
+            0.0, 1.0, 0.0, 0.0, //
+            0.0, 0.0, 1.0, 0.0, //
+            x, y, z, 1.0,
+        ])
+    }
+
+    /// Row `r` (`0..4`) of this column-major matrix.
+    pub fn row(&self, r: usize) -> [f32; 4] {
+        [self.0[r], self.0[4 + r], self.0[8 + r], self.0[12 + r]]
+    }
+
+    /// Combined clip-to-previous-clip reprojection matrix:
+    /// `previous_view_proj * translation(camera_motion) * inverse_view_proj`,
+    /// multiplied in `f64` to preserve precision for distant geometry and sky (`depth == 0`).
+    pub fn reproject(previous: &Mat4, camera_motion: [f32; 3], inverse: &Mat4) -> Mat4 {
+        let mul64 = |a: &[f64; 16], b: &[f64; 16]| {
+            let mut out = [0.0f64; 16];
+            for col in 0..4 {
+                for row in 0..4 {
+                    out[col * 4 + row] = (0..4).map(|k| a[k * 4 + row] * b[col * 4 + k]).sum();
+                }
+            }
+            out
+        };
+        let p = previous.0.map(f64::from);
+        let t = Mat4::translation(camera_motion).0.map(f64::from);
+        let inv = inverse.0.map(f64::from);
+        Mat4(mul64(&mul64(&p, &t), &inv).map(|v| v as f32))
+    }
 }
 
 #[cfg(test)]
@@ -149,5 +183,52 @@ mod tests {
     #[test]
     fn a_flat_matrix_has_no_inverse() {
         assert_eq!(Mat4([0.0; 16]).inverse(), None);
+    }
+
+    fn mul_vec4(m: &Mat4, v: [f32; 4]) -> [f32; 4] {
+        let mut out = [0.0; 4];
+        for row in 0..4 {
+            out[row] = (0..4).map(|k| m.0[k * 4 + row] * v[k]).sum();
+        }
+        out
+    }
+
+    #[test]
+    fn single_matrix_reproject_matches_two_step_for_world_and_sky() {
+        let curr = camera();
+        let inv = curr.inverse().unwrap();
+        let (s, c) = 0.03f32.sin_cos();
+        let turn = Mat4([
+            c, 0.0, -s, 0.0, //
+            0.0, 1.0, 0.0, 0.0, //
+            s, 0.0, c, 0.0, //
+            0.0, 0.0, 0.0, 1.0,
+        ]);
+        let prev = curr.mul(&turn);
+        let motion = [0.15, -0.05, 0.4];
+        let reproject = Mat4::reproject(&prev, motion, &inv);
+
+        // World point: compare single-matrix reproject against two-step unproject + translate + project.
+        let ndc = [0.25, -0.4, 0.01, 1.0];
+        let p = mul_vec4(&inv, ndc);
+        let world = [p[0] / p[3], p[1] / p[3], p[2] / p[3]];
+        let two_step = mul_vec4(&prev, [world[0] + motion[0], world[1] + motion[1], world[2] + motion[2], 1.0]);
+        let one_step = mul_vec4(&reproject, ndc);
+        assert!((two_step[0] / two_step[3] - one_step[0] / one_step[3]).abs() < 1e-4);
+        assert!((two_step[1] / two_step[3] - one_step[1] / one_step[3]).abs() < 1e-4);
+
+        // Linear depth: 1 / dot(inv_row3, ndc) matches clip.w of the world point.
+        let clip = mul_vec4(&curr, [world[0], world[1], world[2], 1.0]);
+        let row3 = inv.row(3);
+        let inv_w: f32 = (0..4).map(|i| row3[i] * ndc[i]).sum();
+        assert!((1.0 / inv_w - clip[3]).abs() < 1e-3);
+
+        // Sky (depth = 0): translation has no effect, matches pure rotation.
+        let sky_ndc = [0.25, 0.5, 0.0, 1.0];
+        let far = mul_vec4(&inv, [0.25, 0.5, 1e-6, 1.0]);
+        let two_step_sky = mul_vec4(&prev, [far[0] / far[3], far[1] / far[3], far[2] / far[3], 0.0]);
+        let one_step_sky = mul_vec4(&reproject, sky_ndc);
+        assert!((two_step_sky[0] / two_step_sky[3] - one_step_sky[0] / one_step_sky[3]).abs() < 1e-4);
+        assert!((two_step_sky[1] / two_step_sky[3] - one_step_sky[1] / one_step_sky[3]).abs() < 1e-4);
     }
 }
