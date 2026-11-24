@@ -1,0 +1,31 @@
+summary = "Smooth motion blur when you turn, run and fly."
+
+categories = ["utility"]
+
+description = """
+Adds smooth motion blur to Sunrise.
+
+- Turning, running and flying blur the world as it moves past you.
+- The blur looks the same at any frame rate.
+- Your hand, the hotbar and the menus always stay sharp.
+- When you stand still, nothing is blurred and the mod does no work at all.
+
+## Settings
+
+**Options > Mods > Motion Blur > Config**
+
+- **Motion Blur:** on or off.
+- **Strength:** how strong the blur is, from 0 to 200 (100 by default).
+"""
+
+[[screenshots]]
+path = "page/1-turning.jpg"
+caption = "Turning the camera blurs the world while keeping the hand and HUD sharp."
+
+[[screenshots]]
+path = "page/2-standing-still.jpg"
+caption = "Standing still leaves the picture sharp and does no GPU work."
+
+[[screenshots]]
+path = "page/3-settings.jpg"
+caption = "Motion Blur settings screen."
