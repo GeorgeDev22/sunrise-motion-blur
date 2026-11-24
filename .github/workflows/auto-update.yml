@@ -1,0 +1,262 @@
+name: Auto-update Sunrise SDK
+
+on:
+  schedule:
+    # Check every 6 hours for new Sunrise dev builds that break fit.
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      force_pin:
+        description: 'Repin to latest dev build even if the current mod already fits'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: auto-update-sunrise-sdk
+  cancel-in-progress: false
+
+jobs:
+  auto-update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_TOKEN || github.token }}
+
+      - name: Find latest Sunrise dev build with an SDK
+        id: latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re, subprocess
+
+          raw = subprocess.check_output(
+              ["gh", "api", "repos/sunrise-org/sunrise/releases?per_page=30"],
+              text=True,
+          )
+          releases = json.loads(raw)
+
+          sdks = {}
+          for rel in releases:
+              if rel.get("draft"):
+                  continue
+              m = re.fullmatch(r"sdk-([0-9a-f]{40})", rel.get("tag_name", ""))
+              if m:
+                  sha = m.group(1)
+                  sdks[sha[:7]] = sha
+
+          devs = []
+          for rel in releases:
+              if rel.get("draft"):
+                  continue
+              tag = rel.get("tag_name", "")
+              m = re.fullmatch(r"dev-\d{4}-\d{2}-\d{2}-([0-9a-f]{7})", tag)
+              if m and m.group(1) in sdks:
+                  devs.append((rel.get("published_at", ""), tag, sdks[m.group(1)]))
+
+          if not devs:
+              raise SystemExit("No Sunrise dev release with a matching sdk-* release found.")
+
+          devs.sort(key=lambda item: item[0], reverse=True)
+          _, tag, sha = devs[0]
+
+          with open("sunrise-mod.toml", "r", encoding="utf-8") as f:
+              manifest = f.read()
+          cur_m = re.search(r'^sunrise\s*=\s*"([0-9a-f]{40})"', manifest, re.M)
+          current = cur_m.group(1) if cur_m else ""
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write(f"tag={tag}\n")
+              out.write(f"sha={sha}\n")
+              out.write(f"short={sha[:7]}\n")
+              out.write(f"current={current}\n")
+              out.write(f"already_pinned={'true' if current == sha else 'false'}\n")
+
+          print(f"Latest dev build: {tag} ({sha})")
+          print(f"Current pin:      {current}")
+          PY
+
+      - name: Skip if already pinned
+        if: steps.latest.outputs.already_pinned == 'true'
+        run: |
+          echo "Already pinned to ${{ steps.latest.outputs.tag }} (${{ steps.latest.outputs.sha }})." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: System libraries the game links
+        if: steps.latest.outputs.already_pinned != 'true'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev
+
+      - name: Install cargo-sunrise-mod
+        if: steps.latest.outputs.already_pinned != 'true'
+        run: |
+          set -eu
+          base=https://github.com/sunrise-org/sunrise/releases/download
+          key=r53xb3cuafGxZSicLz06KC+xXp9NJdPH8snNmXo5pAc=
+          tool=tool-x86_64-unknown-linux-gnu.tar.xz
+
+          work=$(mktemp -d)
+          ( cd "$work"
+            curl -fsSLO "$base/mod-tool/$tool"
+            curl -fsSLO "$base/mod-tool/SHA256SUMS"
+            curl -fsSLO "$base/mod-tool/SHA256SUMS.sig"
+            printf 'horizon release %s\n' "mod-tool" | cat - SHA256SUMS > message
+            { printf '\060\052\060\005\006\003\053\145\160\003\041\000'; printf '%s' "$key" | openssl base64 -d -A; } > key.der
+            signed=
+            while read -r line || [ -n "$line" ]; do
+              printf '%s' "$line" | openssl base64 -d -A > signature
+              openssl pkeyutl -verify -rawin -pubin -keyform DER -inkey key.der -in message -sigfile signature > /dev/null 2>&1 && signed=1
+            done < SHA256SUMS.sig
+            [ -n "$signed" ] || { echo "SHA256SUMS of mod-tool is not signed by Sunrise" >&2; exit 1; }
+            grep " $tool\$" SHA256SUMS | sha256sum -c -
+            tar -xJf "$tool"
+            install -Dm755 cargo-sunrise-mod "$HOME/.local/bin/cargo-sunrise-mod" )
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Check if current mod already fits latest dev build
+        id: fit
+        if: steps.latest.outputs.already_pinned != 'true'
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.force_pin }}" = "true" ]; then
+            echo "needs_update=true" >> "$GITHUB_OUTPUT"
+            echo "Force pin requested; skipping current fit check." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          cargo sunrise-mod build
+          if cargo sunrise-mod check target/sunrise-mod/motion_blur.smod --build "${{ steps.latest.outputs.sha }}" > "$RUNNER_TEMP/fit_check.log" 2>&1; then
+            cat "$RUNNER_TEMP/fit_check.log"
+            echo "needs_update=false" >> "$GITHUB_OUTPUT"
+            echo "Current mod already fits \`${{ steps.latest.outputs.tag }}\` — no update needed." >> "$GITHUB_STEP_SUMMARY"
+          else
+            cat "$RUNNER_TEMP/fit_check.log"
+            echo "needs_update=true" >> "$GITHUB_OUTPUT"
+            echo "Current mod does not fit \`${{ steps.latest.outputs.tag }}\` — attempting repin." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Repin, test, and build against latest dev
+        id: repin
+        if: steps.latest.outputs.already_pinned != 'true' && steps.fit.outputs.needs_update == 'true'
+        run: |
+          set +e
+          {
+            echo "=== cargo sunrise-mod pin ==="
+            cargo sunrise-mod pin "${{ steps.latest.outputs.sha }}" || exit 1
+            echo "=== cargo test (core) ==="
+            cargo test --manifest-path src/core/Cargo.toml || exit 1
+            echo "=== cargo sunrise-mod build ==="
+            cargo sunrise-mod build || exit 1
+            echo "=== cargo sunrise-mod check ==="
+            cargo sunrise-mod check || exit 1
+            cargo sunrise-mod check target/sunrise-mod/motion_blur.smod --build "${{ steps.latest.outputs.sha }}" || exit 1
+          } > "$RUNNER_TEMP/repin.log" 2>&1
+          status=$?
+          cat "$RUNNER_TEMP/repin.log"
+          if [ "$status" -eq 0 ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open or update issue if repin failed
+        if: steps.repin.outputs.ok == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          title="Auto-update: Sunrise ${{ steps.latest.outputs.tag }} needs manual fixes"
+          tail -n 120 "$RUNNER_TEMP/repin.log" > "$RUNNER_TEMP/repin_tail.log"
+          body=$(cat <<EOF
+          Motion Blur no longer fits \`${{ steps.latest.outputs.tag }}\` (\`${{ steps.latest.outputs.sha }}\`), and an automatic repin failed to build or pass checks.
+
+          Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+          <details>
+          <summary>Build / check log (last 120 lines)</summary>
+
+          \`\`\`
+          $(cat "$RUNNER_TEMP/repin_tail.log")
+          \`\`\`
+          </details>
+          EOF
+          )
+
+          existing=$(gh issue list --state open --search "in:title \"${title}\"" --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body"
+          fi
+          exit 1
+
+      - name: Check whether RELEASE_TOKEN is configured
+        id: auth
+        if: steps.repin.outputs.ok == 'true'
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          if [ -n "$RELEASE_TOKEN" ]; then
+            echo "has_release_token=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_release_token=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Auto-release (when RELEASE_TOKEN is set)
+        if: steps.repin.outputs.ok == 'true' && steps.auth.outputs.has_release_token == 'true'
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add sunrise-mod.toml
+          if git status --porcelain Cargo.lock | grep -q .; then
+            git add Cargo.lock
+          fi
+          git commit -m "Pin Sunrise SDK to ${{ steps.latest.outputs.short }}"
+
+          cargo sunrise-mod release
+          echo "Auto-released a new patch version pinned to \`${{ steps.latest.outputs.tag }}\`." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Open or update PR (fallback when RELEASE_TOKEN is not set)
+        if: steps.repin.outputs.ok == 'true' && steps.auth.outputs.has_release_token != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          branch="auto-update/sunrise-${{ steps.latest.outputs.short }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git checkout -B "$branch"
+          git add sunrise-mod.toml
+          if git status --porcelain Cargo.lock | grep -q .; then
+            git add Cargo.lock
+          fi
+          git commit -m "Pin Sunrise SDK to ${{ steps.latest.outputs.short }}"
+          git push --force origin "$branch"
+
+          title="Pin Sunrise SDK to ${{ steps.latest.outputs.short }} (${{ steps.latest.outputs.tag }})"
+          body=$(cat <<EOF
+          Motion Blur stopped fitting \`${{ steps.latest.outputs.tag }}\` (\`${{ steps.latest.outputs.sha }}\`).
+
+          Repinning to \`${{ steps.latest.outputs.sha }}\` built and passed all tests and \`cargo sunrise-mod check\` cleanly.
+
+          > **Tip:** Add a fine-grained PAT with \`Contents: Read and write\` as the \`RELEASE_TOKEN\` repository secret if you want this workflow to automatically bump the patch version, tag, and trigger \`Sunrise release\`.
+          EOF
+          )
+
+          existing=$(gh pr list --head "$branch" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh pr edit "$existing" --title "$title" --body "$body"
+          else
+            gh pr create --base main --head "$branch" --title "$title" --body "$body"
+          fi
+          echo "Opened/updated PR on branch \`$branch\` (set \`RELEASE_TOKEN\` to enable automatic releases)." >> "$GITHUB_STEP_SUMMARY"
