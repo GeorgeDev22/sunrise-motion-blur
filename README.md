@@ -54,7 +54,7 @@ Every push builds the mod on GitHub Actions too, and uploads the `.smod` and a g
 
 Build with the tool from the SDK pinned in `sunrise-mod.toml`. The package tracks the API and render hooks
 it uses, so Sunrise can rebuild it for compatible game builds. Check a build with
-`cargo sunrise-mod fits target/sunrise-mod/motion_blur.smod --build <build>`.
+`cargo sunrise-mod check target/sunrise-mod/motion_blur.smod --build <build>`.
 
 ## License
 

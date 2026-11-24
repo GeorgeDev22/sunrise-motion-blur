@@ -55,7 +55,7 @@ jobs:
         run: |
           cargo sunrise-mod check
           build=$(sed -n 's/^sunrise = "\([0-9a-f]\{40\}\)"/\1/p' sunrise-mod.toml)
-          cargo sunrise-mod fits target/sunrise-mod/motion_blur.smod --build "$build"
+          cargo sunrise-mod check target/sunrise-mod/motion_blur.smod --build "$build"
 
       # `run` stages the game with the mod under target/sunrise-mod/run/app before starting it.
       # Here it has no prepared resources and stops at once; the staged folder is what we keep.
