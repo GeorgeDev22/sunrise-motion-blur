@@ -154,6 +154,9 @@ jobs:
             cargo test --manifest-path src/core/Cargo.toml || exit 1
             echo "=== cargo sunrise-mod build ==="
             cargo sunrise-mod build || exit 1
+            echo "=== regenerate and verify Cargo.lock ==="
+            cargo generate-lockfile || exit 1
+            cargo metadata --locked --format-version 1 > /dev/null || exit 1
             echo "=== cargo sunrise-mod check ==="
             cargo sunrise-mod check || exit 1
             cargo sunrise-mod check target/sunrise-mod/motion_blur.smod --build "${{ steps.latest.outputs.sha }}" || exit 1
