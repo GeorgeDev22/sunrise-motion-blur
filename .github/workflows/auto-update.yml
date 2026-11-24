@@ -2,8 +2,8 @@ name: Auto-update Sunrise SDK
 
 on:
   schedule:
-    # Check every 6 hours for new Sunrise dev builds that break fit.
-    - cron: '17 */6 * * *'
+    # Check every 30 minutes for new Sunrise dev builds that break fit.
+    - cron: '17,47 * * * *'
   workflow_dispatch:
     inputs:
       force_pin:
