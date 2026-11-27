@@ -18,7 +18,8 @@ pub use frame::{Hand, Kept, Work, World, active, recycle, work, world_drawn};
 pub use motion_blur_core::{BlurParams, MotionVertex, SHADER};
 
 use mod_api::{
-    ClientHost, ClientLevelLoadEvent, Hooks, Registrar, RegistrationContext, SettingChangedEvent,
+    ClientHost, ClientLevelLoadEvent, Hooks, Host, Registrar, RegistrationContext,
+    SettingChangedEvent,
 };
 
 #[derive(Default)]
@@ -35,7 +36,7 @@ impl Hooks for MotionBlur {
         settings::load(&*host);
     }
 
-    fn setting_changed(&self, host: &mut dyn ClientHost, _: &mut SettingChangedEvent<'_>) {
-        settings::load(&*host);
+    fn setting_changed(&self, host: &dyn Host, _: &mut SettingChangedEvent<'_>) {
+        settings::load(host);
     }
 }

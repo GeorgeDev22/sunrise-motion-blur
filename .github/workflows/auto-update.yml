@@ -147,7 +147,8 @@ jobs:
         if: steps.latest.outputs.already_pinned != 'true' && steps.fit.outputs.needs_update == 'true'
         run: |
           set +e
-          {
+          # A subshell, so `exit 1` ends only the repin and the log and ok=false still follow.
+          (
             echo "=== cargo sunrise-mod pin ==="
             cargo sunrise-mod pin "${{ steps.latest.outputs.sha }}" || exit 1
             echo "=== cargo test (core) ==="
@@ -160,7 +161,7 @@ jobs:
             echo "=== cargo sunrise-mod check ==="
             cargo sunrise-mod check || exit 1
             cargo sunrise-mod check target/sunrise-mod/motion_blur.smod --build "${{ steps.latest.outputs.sha }}" || exit 1
-          } > "$RUNNER_TEMP/repin.log" 2>&1
+          ) > "$RUNNER_TEMP/repin.log" 2>&1
           status=$?
           cat "$RUNNER_TEMP/repin.log"
           if [ "$status" -eq 0 ]; then
